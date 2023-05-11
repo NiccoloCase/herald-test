@@ -1,5 +1,7 @@
 import {NativeModules, Platform, NativeEventEmitter} from 'react-native';
 
+const ID_LENGTH = 24;
+
 const isAndroid = Platform.OS == 'android';
 
 /**
@@ -33,6 +35,36 @@ const isActive = () => {
       resolve(false);
     }
   });
+};
+
+/**
+ * Restituisce l'ID dell'utente contenuto in un messaggio
+ * Message template:
+ * SPL::5fdedb7c25ab1352eef88f60
+ * @param {String} message
+ * @returns
+ */
+export const getIdFromMessage = message => {
+  const splitted = message.split('::');
+  if (splitted.length != 2) return null;
+  const protocol = splitted[0];
+  const id = splitted[1];
+  if (protocol != 'SPL') return null;
+  if (!id) return null;
+  if (id.length != ID_LENGTH) return null;
+  else return id;
+};
+
+/**
+ * Generea un messaggui da un ID
+ * @param {*} id
+ * @returns
+ */
+export const getMessageFromId = id => {
+  if (!id) return null;
+  if (id.length != ID_LENGTH) return null;
+
+  return `SPL::${id}`;
 };
 
 const registerToEvents = (

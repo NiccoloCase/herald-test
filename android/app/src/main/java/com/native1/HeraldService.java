@@ -5,8 +5,6 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.util.Log;
@@ -46,18 +44,15 @@ public class HeraldService implements SensorDelegate {
 
 
     public void init(Activity activity, String message, MyCallback myCallback) {
+        this.myCallback = myCallback;
 
-
-       this.myCallback = myCallback;
-
-        Log.d("ReactNative", "INT CIAO");
+        Log.d("ReactNative", "INT HERALD SERVICE");
 
         // Initialise foreground service to keep application running in background
         this.createNotificationChannel(activity);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationService.shared(activity.getApplication()).startForegroundService(this.getForegroundNotification(activity), NOTIFICATION_ID);
         }
-
 
         PayloadDataSupplier supplier = new PayloadDataSupplier() {
             @Nullable
@@ -104,9 +99,7 @@ public class HeraldService implements SensorDelegate {
     public static void stop() {
         sensor.stop();
         sensor = null;
-
-
-       myCallback.onStop();
+        myCallback.onStop();
     }
 
 

@@ -12,17 +12,22 @@ import Nearby from './Nearby';
 import {getDeviceName} from 'react-native-device-info';
 
 const App = () => {
-  const [deviceName, setDeviceName] = useState('devicename');
+  const [deviceName, _] = useState(
+    'deviceName' + Math.floor(Math.random() * 100),
+  );
   const [devices, setDevices] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [startDate, setStartDate] = useState(null);
 
   useEffect(() => {
-    Nearby.isActive().then(res => setIsRunning(res));
+    Nearby.isActive().then(res => {
+      console.log('Is already Running: ' + res);
+      setIsRunning(res);
+    });
   }, []);
 
   useEffect(() => {
-    getDeviceName().then(setDeviceName);
+    //getDeviceName().then(setDeviceName);
     // Eventi:
     const removeEvents = Nearby.registerToEvents(
       // MESSAGE FOUND
@@ -30,14 +35,14 @@ const App = () => {
         const diff = new Date().getTime() - (startDate || new Date()).getTime();
 
         console.log(
-          `[${deviceName}]: messaggio ricevuto dal dispositivo "${event.message}"`,
+          `[${deviceName}]: messaggio ricevuto dal dispositivo "${event}"`,
         );
-        setDevices(d => [...d, event.message + ' - ' + diff / 1000]);
+        setDevices(d => [...d, event + ' - ' + diff / 1000]);
       },
       // MESSAGE LOST
       event => {
         console.log(
-          `[${deviceName}]: messaggio perso dal dispositivo "${event.message}"`,
+          `[${deviceName}]: messaggio perso dal dispositivo "${event}"`,
         );
       },
       // ACTIVITY START

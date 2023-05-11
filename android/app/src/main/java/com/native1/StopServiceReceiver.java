@@ -19,7 +19,5 @@ public class StopServiceReceiver extends BroadcastReceiver {
         NotificationService.shared(app).stopForegroundService();
 
         HeraldService.stop();
-
-
     }
 }
