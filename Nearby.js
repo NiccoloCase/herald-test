@@ -1,7 +1,6 @@
 import {NativeModules, Platform, NativeEventEmitter} from 'react-native';
 
 const ID_LENGTH = 24;
-
 const isAndroid = Platform.OS == 'android';
 
 /**
@@ -35,6 +34,21 @@ const isActive = () => {
       resolve(false);
     }
   });
+};
+
+/**
+ *
+ */
+const arePermissionsGranted = () => {
+  if (isAndroid) {
+    return new Promise((resolve, reject) => {
+      NativeModules.MyNativeModule.arePermissionsGranted(res => {
+        resolve(res);
+      });
+    });
+  } else {
+    return Promise.resolve(true);
+  }
 };
 
 /**
@@ -87,6 +101,9 @@ const registerToEvents = (
     eventEmitter.addListener('onGooglePlayServicesNotAvailable', () => {
       alert('onGooglePlayServicesNotAvailable');
     }),
+    eventEmitter.addListener('gpsOff', () => {
+      alert('gpsOff');
+    }),
   );
 
   return () => {
@@ -99,4 +116,5 @@ export default {
   stop,
   isActive,
   registerToEvents,
+  arePermissionsGranted,
 };

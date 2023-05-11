@@ -30,9 +30,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.core.os.BuildCompat;
 import java.util.ArrayList;
 import io.heraldprox.herald.sensor.service.ForegroundService;
 import io.heraldprox.herald.sensor.service.NotificationService;
@@ -43,20 +41,24 @@ interface MyCallback {
 }
 
 
-public  class MyNativeModule extends ReactContextBaseJavaModule  implements PermissionListener,MyCallback {
+public  class MyNativeModule extends ReactContextBaseJavaModule  implements PermissionListener, MyCallback {
     private static ReactApplicationContext reactContext;
+    // Se il servizio è attivo
     private boolean isRunning = false;
+    // Gestione errori
+    private boolean connectionsFailed= false;
+    private boolean heraldFailed = false;
 
     // Messaggi trovati
     private ArrayList<String> foundMessages = new ArrayList<String>();
+    // Messaggio da inviare
+    private String message;
 
     // NEARBY CONNECTIONS
     private ConnectionsClient mConnectionsClient;
     // HERALD
     HeraldService heraldService;
     // PERMESSI
-    private static final int REQUEST_ENABLE_BT = 1;
-    private static final int MY_PERMISSIONS_REQUEST_CODE = 100;
     private static final int REQUEST_CODE_REQUIRED_PERMISSIONS = 1;
     private static final String[] REQUIRED_PERMISSIONS;
     static {
@@ -70,6 +72,10 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
                             Manifest.permission.CHANGE_WIFI_STATE,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
                             Manifest.permission.ACCESS_FINE_LOCATION,
+                            // Herald:
+                            Manifest.permission.WAKE_LOCK,
+                            Manifest.permission.FOREGROUND_SERVICE,
+
                     };
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             REQUIRED_PERMISSIONS =
@@ -80,6 +86,9 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
                             Manifest.permission.CHANGE_WIFI_STATE,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
                             Manifest.permission.ACCESS_FINE_LOCATION,
+                            // Herald:
+                            Manifest.permission.WAKE_LOCK,
+                            Manifest.permission.FOREGROUND_SERVICE
                     };
         } else {
             REQUIRED_PERMISSIONS =
@@ -89,13 +98,12 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
                             Manifest.permission.ACCESS_WIFI_STATE,
                             Manifest.permission.CHANGE_WIFI_STATE,
                             Manifest.permission.ACCESS_COARSE_LOCATION,
+                            // Herald:
+                            Manifest.permission.WAKE_LOCK,
+                            Manifest.permission.FOREGROUND_SERVICE
                     };
         }
     }
-
-
-
-
 
     MyNativeModule(ReactApplicationContext context) {
         super(context);
@@ -111,34 +119,22 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
     @ReactMethod
     public void start(String message) {
         Activity context = getCurrentActivity();
+        // imposta messaggio
+        this.message = message;
 
         // Controlla se ci sono i play services TODO
 
         // Controlla se ha i permessi
         if (!hasPermissions(context, getRequiredPermissions())) {
-            if (Build.VERSION.SDK_INT < 23) {
-                ActivityCompat.requestPermissions(
-                       context, getRequiredPermissions(), REQUEST_CODE_REQUIRED_PERMISSIONS);
-            } else {
-                context.requestPermissions(getRequiredPermissions(), REQUEST_CODE_REQUIRED_PERMISSIONS);
-            }
+            PermissionAwareActivity permissionActivity = (PermissionAwareActivity) getCurrentActivity();
+            permissionActivity.requestPermissions( getRequiredPermissions(), REQUEST_CODE_REQUIRED_PERMISSIONS,this);
 
             Log.d("ReactNative","PERMISSION NOT GRANTED");
+            emitMessageEvent("onPermissionsRejected", "Permissions rejected");
 
         } else {
             Log.d("ReactNative","PERMISSION GRANTED");
-            isRunning = true;
-            // Invia evento react-native
-            emitMessageEvent("onActivityStart","started");
-            // Herald
-            heraldService = new HeraldService();
-            heraldService.init(reactContext.getCurrentActivity(), message,this);
-            heraldService.start();
-            // nearby connections
-            startAdvertising_connections(message);
-            startDiscovering_connections();
-
-
+            startAll();
         }
     }
 
@@ -156,6 +152,37 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
         // Distrugge notifica foreground service
         NotificationService.shared(getCurrentActivity().getApplication()).stopForegroundService();
         this.onStop();
+
+    }
+
+    // REACT-NATIVE: se sono stati garantiti i permessi
+    @ReactMethod
+    public void arePermissionsGranted(Callback callBack) {
+        Boolean res = hasPermissions(getCurrentActivity(), getRequiredPermissions());
+        callBack.invoke(res);
+    }
+
+    // REACT-NATIVE: SE IL SERVIZIO E' ATTIVO
+    @ReactMethod
+    public void isActivityRunning(Callback callBack) {
+        Boolean running = isServiceRunning();
+        callBack.invoke(running);
+    }
+
+
+    // AVVIA TUTTO
+    private void startAll(){
+        if(this.message == null) return;
+        isRunning = true;
+        // Invia evento react-native
+        emitMessageEvent("onActivityStart","started");
+        // Herald
+        heraldService = new HeraldService();
+        heraldService.init(reactContext.getCurrentActivity(), message,this);
+        heraldService.start();
+        // nearby connections
+        startAdvertising_connections(this.message);
+        startDiscovering_connections();
     }
 
 
@@ -250,7 +277,8 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
                             @Override
                             public void onSuccess(Void unusedResult) {
                                 Log.d("ReactNative","Now advertising endpoint " + localEndpointName);
-                                // onAdvertisingStarted();
+                                isRunning = true;
+                                emitMessageEvent("onAdvertisingStarted","Advertising started");
                             }
                         })
                 .addOnFailureListener(
@@ -260,65 +288,68 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
                                 // mIsAdvertising = false;
                                 Log.d("ReactNative","startAdvertising() failed.", e);
                                 // onAdvertisingFailed();
+
                             }
                         });
     }
 
 
-
-
-
-
-
-
+    // QUANDO VENGONO AGGIORNATI I PERMESSI
     @Override
-    public boolean onRequestPermissionsResult(
-            int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public boolean onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        Log.d("ReactNative","onRequestPermissionsResult");
         if (requestCode == REQUEST_CODE_REQUIRED_PERMISSIONS) {
             int i = 0;
             for (int grantResult : grantResults) {
                 if (grantResult == PackageManager.PERMISSION_DENIED) {
-                Log.d("ReactNative","PERMISSION_DENIED");
+                    Log.d("ReactNative","PERMISSION_DENIED: " + permissions[i]);
+                    emitMessageEvent("onPermissionsRejected", "Permissions rejected");
                     return false;
                 }
                 i++;
             }
-            //recreate();
+
+        }
+
+        // Controlla se il GPS è attivo
+        boolean gpsStatus = checkGPSStatus();
+        Log.d("ReactNative", "GPS STATUS: " + gpsStatus);
+        if(gpsStatus == false) {
+            Log.d("Permissions", "MISSING GPS");
+            emitMessageEvent("gpsOff", "gpsOff");
+            return false;
         }
 
         Log.d("ReactNative","PERMISSION_SUCCESS");
-
+        startAll();
 
         return true;
     }
 
-
-
-
-    public static boolean hasPermissions(Context context, String... permissions) {
+    // VERIFICA SE SONO STATI CONCESSI I PERMESSI NECESSARI
+    public boolean hasPermissions(Context context, String... permissions) {
+        // Controlla se sono stati concessi i permessi necessari
         for (String permission : permissions) {
             if (ContextCompat.checkSelfPermission(context, permission)
                     != PackageManager.PERMISSION_GRANTED) {
-                Log.d("ReactNative","Mi manca il permesso: " + permission);
+                Log.d("ReactNative", "MANCA IL PERMESSO: " + permission);
                 return false;
             }
         }
+        // Controlla se il GPS è attivo
+        boolean gpsStatus = checkGPSStatus();
+        Log.d("ReactNative", "GPS STATUS: " + gpsStatus);
+        if(gpsStatus == false) {
+            Log.d("Permissions", "MISSING GPS");
+            emitMessageEvent("gpsOff", "gpsOff");
+            return false;
+        }
+
         return true;
     }
 
-
-
     protected String[] getRequiredPermissions() {
         return REQUIRED_PERMISSIONS;
-    }
-
-
-
-    // REACT-NATIVE: SE IL SERVIZIO E' ATTIVO
-    @ReactMethod
-    public void isActivityRunning(Callback callBack) {
-        Boolean running = isServiceRunning();
-        callBack.invoke(running);
     }
 
     // CALLBACK
@@ -341,6 +372,10 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
         stop_connections();
         // Svuota l'array dei messaggi trovati
         foundMessages.clear();
+
+        // Gestione errori
+        heraldFailed = false;
+        connectionsFailed = false;
     }
 
 
@@ -389,95 +424,4 @@ public  class MyNativeModule extends ReactContextBaseJavaModule  implements Perm
         LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
         return manager.isProviderEnabled(LocationManager.GPS_PROVIDER);
     }
-    // OTTIENE LO STATUS DEI PERESSI
-    private Boolean checkPermissions() {
-        PermissionAwareActivity activity = (PermissionAwareActivity) getCurrentActivity();
-        if (activity == null) return false;
-
-        ArrayList<String> missingPermissionsList = new ArrayList<String>();
-
-        // ACCESS_FINE_LOCATION
-        if (ActivityCompat.checkSelfPermission(reactContext.getCurrentActivity(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            missingPermissionsList.add(Manifest.permission.ACCESS_FINE_LOCATION);
-            Log.d("ReactNative", "Missing ACCESS_FINE_LOCATION");
-        }
-        // Android >= 12
-        if (BuildCompat.isAtLeastS()) {
-            // BLUETOOTH_CONNECT
-            if (ActivityCompat.checkSelfPermission(reactContext.getCurrentActivity(), Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                missingPermissionsList.add(Manifest.permission.BLUETOOTH_CONNECT);
-                Log.d("ReactNative", "Missing BLUETOOTH_CONNECT");
-            }
-            // BLUETOOTH_SCAN
-            if (ActivityCompat.checkSelfPermission(reactContext.getCurrentActivity(), Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-                missingPermissionsList.add(Manifest.permission.BLUETOOTH_SCAN);
-                Log.d("ReactNative", "Missing BLUETOOTH_SCAN");
-            }
-            // BLUETOOTH_ADVERTISE
-            if (ActivityCompat.checkSelfPermission(reactContext.getCurrentActivity(), Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
-                missingPermissionsList.add(Manifest.permission.BLUETOOTH_ADVERTISE);
-                Log.d("ReactNative", "Missing BLUETOOTH_ADVERTISE");
-            }
-        }
-        // Android < 12
-        else {
-            Log.d("ReactNative", "Android < 12");
-            // BLUETOOTH
-            if (ActivityCompat.checkSelfPermission(reactContext.getCurrentActivity(), Manifest.permission.BLUETOOTH) != PackageManager.PERMISSION_GRANTED) {
-                missingPermissionsList.add(Manifest.permission.BLUETOOTH);
-                Log.d("ReactNative", "Missing BLUETOOTH");
-            }
-            // BLUETOOTH_ADMIN
-            if (ActivityCompat.checkSelfPermission(reactContext.getCurrentActivity(), Manifest.permission.BLUETOOTH_ADMIN) != PackageManager.PERMISSION_GRANTED) {
-                missingPermissionsList.add(Manifest.permission.BLUETOOTH_ADMIN);
-                Log.d("ReactNative", "Missing BLUETOOTH_ADMIN");
-            }
-        }
-
-        int size = missingPermissionsList.size();
-        if(size == 0 ) {
-            // Controlla se il GPS è attivo
-            boolean gpsStatus = checkGPSStatus();
-            if(gpsStatus == false) {
-                Log.d("Permissions", "MISSING GPS");
-
-                emitMessageEvent("gpsOff",  "MISSING GPS");
-                //  Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
-                //   getCurrentActivity().startActivity(intent);
-                return false;
-            }
-            return true;
-        }
-
-        String[] permissions = new String[size];
-        permissions = missingPermissionsList.toArray(permissions);
-        // Richiede i permessi
-        activity.requestPermissions( permissions, MY_PERMISSIONS_REQUEST_CODE,this);
-
-        return false;
-    }
-/*
-    @Override
-    public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        if(requestCode == MY_PERMISSIONS_REQUEST_CODE) {
-            Boolean success = true;
-
-            for (int i = 0; i < permissions.length; i++) {
-                if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
-                    Log.d("ReactNative", "Permission granted: " + permissions[i]);
-                } else if (grantResults[i] == PackageManager.PERMISSION_DENIED) {
-                    Log.d("ReactNative", "Permission NOT granted: " + permissions[i]);
-                    success = false;
-                }
-            }
-            if(success) {
-                // START
-                //startAll();
-            } else {
-                emitMessageEvent("onPermissionsRejected", "Permissions rejected");
-            }
-        }
-
-        return true;
-    }*/
 }

@@ -18,11 +18,16 @@ const App = () => {
   const [devices, setDevices] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [startDate, setStartDate] = useState(null);
+  const [missingPermissions, setMissingPermissions] = useState(null);
 
   useEffect(() => {
     Nearby.isActive().then(res => {
       console.log('Is already Running: ' + res);
       setIsRunning(res);
+    });
+    Nearby.arePermissionsGranted().then(res => {
+      console.log('Permissions: ' + res);
+      setMissingPermissions(!res);
     });
   }, []);
 
@@ -92,6 +97,7 @@ const App = () => {
         }}
       />
 
+      {missingPermissions && <Text>Mancano i permessi</Text>}
       <ScrollView style={{marginTop: 60}}>
         {devices.map((x, i) => {
           return (

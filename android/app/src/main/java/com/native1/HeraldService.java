@@ -32,23 +32,21 @@ import io.heraldprox.herald.sensor.service.NotificationService;
 
 
 public class HeraldService implements SensorDelegate {
-    String tag = "PayloadExample";
-    // Sensor for proximity detection
+
+    private final String tag = "ReactNative"; //HeraldService.class.getName();
     public static SensorArray sensor = null;
 
     private final static String NOTIFICATION_CHANNEL_ID = "HERALD_NOTIFICATION_CHANNEL_ID";
     private final static int NOTIFICATION_ID = NOTIFICATION_CHANNEL_ID.hashCode();
-    private final static String NOTIFICATION_CHANNEL_NAME = "HERALD_NOTIFICATION_CHANNEL_NAME";
-
+    private final static String NOTIFICATION_CHANNEL_NAME = "Background activity";
     private static MyCallback myCallback;
 
 
     public void init(Activity activity, String message, MyCallback myCallback) {
         this.myCallback = myCallback;
-
         Log.d("ReactNative", "INT HERALD SERVICE");
 
-        // Initialise foreground service to keep application running in background
+        // Foreground activity
         this.createNotificationChannel(activity);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationService.shared(activity.getApplication()).startForegroundService(this.getForegroundNotification(activity), NOTIFICATION_ID);
@@ -79,21 +77,12 @@ public class HeraldService implements SensorDelegate {
 
         };
 
-        // final PayloadDataSupplier payloadDataSupplier = new TestPayloadDataSupplier(identifier());
-
         sensor = new SensorArray(activity, supplier);
-
-        // Add appDelegate as listener for detection events for logging and start sensor
         sensor.add(this);
-
-
     }
 
     public void start() {
-
         sensor.start();
-
-        sensor.immediateSendAll(new Data("Hello World".getBytes()));
     }
 
     public static void stop() {
@@ -103,6 +92,7 @@ public class HeraldService implements SensorDelegate {
     }
 
 
+    // CREA IL CANALE DI NOTIFICA
     private void createNotificationChannel(Activity activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             final int importance = NotificationManager.IMPORTANCE_DEFAULT;
@@ -110,22 +100,19 @@ public class HeraldService implements SensorDelegate {
                     NOTIFICATION_CHANNEL_ID,
                    NOTIFICATION_CHANNEL_NAME, importance);
 
-            //channel.setDescription(this.getString(R.string.notification_channel_description));
-
             final NotificationManagerCompat notificationManager = NotificationManagerCompat.from(activity);
             notificationManager.createNotificationChannel(channel);
         }
     }
 
+    // CREA LA NOTIFICA PER IL FOREGROUND SERVICE
     private Notification getForegroundNotification(Activity activity) {
-
+        // Bottone FERMA
         Intent stopIntent = new Intent(activity, StopServiceReceiver.class);
         stopIntent.setAction("com.example.app.STOP_ACTION");
         PendingIntent stopPendingIntent = PendingIntent.getBroadcast(activity, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
 
-
-
-
+        //
         final Intent intent = new Intent(activity, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         // FLAG_MUTABLE was the default prior to Android 12. Required to be explicitly set since 12 (SDK 31)
@@ -134,7 +121,7 @@ public class HeraldService implements SensorDelegate {
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-              //  .setContentText("Ora sei visibile dagli altri utenti vicini a te")
+                .setContentText("Ora sei visibile dagli altri utenti vicini a te")
                 .setContentTitle("Sei online!")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setOngoing(true)
@@ -142,44 +129,29 @@ public class HeraldService implements SensorDelegate {
                 .setUsesChronometer(true).addAction(R.mipmap.ic_launcher_round, "FERMA", stopPendingIntent);
 
 
-
-
         final Notification notification = builder.build();
         return notification;
     }
 
-
     @Override
     public void sensor(@NonNull SensorType sensor, @NonNull TargetIdentifier didDetect) {
-     //   Log.i(tag, sensor.name() + ",didDetect=" + didDetect);
+        Log.i(tag, sensor.name() + ",didDetect=" + didDetect + "value: " + didDetect.value);
 
     }
 
     @Override
     public void sensor(@NonNull SensorType sensor, boolean available, @NonNull TargetIdentifier didDeleteOrDetect) {
-     /*   String avail = "N";
-        if (available) {
-            avail = "Y";
-        }*/
         Log.i(tag, sensor.name() + ",didDeleteOrDetect=" + didDeleteOrDetect +
                 ",available=" +available + "value:"+ new String(didDeleteOrDetect.value));
-
-
     }
 
     @Override
     public void sensor(@NonNull SensorType sensor, @NonNull PayloadData didRead, @NonNull TargetIdentifier fromTarget) {
         Log.i(tag, sensor.name() + ",didRead=" + didRead.shortName() + ",fromTarget=" + fromTarget);
 
-        Log.d("DIO1", didRead.shortName());
-        Log.d("DIO1", new String(didRead.value));
-
+        Log.d("HERALD1", new String(didRead.value));
 
         if(myCallback!=null) myCallback.onFound(new String(didRead.value) + "- herald1");
-
-
-
-        // parsePayload("didRead", sensor, didRead, fromTarget);
     }
 
     @Override
@@ -191,15 +163,8 @@ public class HeraldService implements SensorDelegate {
     public void sensor(@NonNull SensorType sensor, @NonNull List<PayloadData> didShare, @NonNull TargetIdentifier fromTarget) {
        final List<String> payloads = new ArrayList<>(didShare.size());
         for (PayloadData payloadData : didShare) {
-            //payloads.add(payloadData.shortName());
-            Log.d("DIO3", payloadData.shortName());
-            Log.d("DIO3", new String(payloadData.value));
+            Log.d("HERALD3", new String(payloadData.value));
         }
-       /*
-       Log.i(tag, sensor.name() + ",didShare=" + payloads.toString() + ",fromTarget=" + fromTarget);
-        for (PayloadData payloadData : didShare) {
-           // parsePayload("didShare", sensor, payloadData, fromTarget);
-        }*/
     }
 
     @Override
@@ -214,10 +179,7 @@ public class HeraldService implements SensorDelegate {
 
     @Override
     public void sensor(@NonNull SensorType sensor, @NonNull Proximity didMeasure, @NonNull TargetIdentifier fromTarget, @NonNull PayloadData withPayload) {
-      //  Log.i(tag, sensor.name() + ",didMeasure=" + didMeasure.description() + ",fromTarget=" + fromTarget + ",withPayload=" + withPayload.shortName());
-        Log.d("DIO2", withPayload.shortName());
-        Log.d("DIO2", new String(withPayload.value));
-
+        Log.d("HERALD2", new String(withPayload.value));
         if(myCallback!=null) myCallback.onFound(new String(withPayload.value)+ "- herald2");
     }
 
